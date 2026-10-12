@@ -75,16 +75,27 @@ export function uid(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36)
 }
 
-/** Rozdelí text na vety (zachová interpunkciu). */
+/**
+ * Rozdelí text na vety (zachová interpunkciu). Koniec vety je [.!?…] nasledovaný medzerou
+ * a veľkým písmenom (prípadne úvodzovkou), koncom textu alebo novým riadkom – takže dátumy
+ * „12. 11. 2026“ a čísla „3.5“ vetu nerozdelia.
+ */
 export function splitSentences(text: string): { text: string; start: number }[] {
   const out: { text: string; start: number }[] = []
-  const re = /[^.!?\n]+(?:[.!?]+|\n|$)/g
-  let m: RegExpExecArray | null
-  while ((m = re.exec(text))) {
-    const raw = m[0]
+  const boundary = /[.!?…]+["“”'»)]*(?=\s+["„“'«(]?\p{Lu}|\s*$)|\n+/gu
+  let last = 0
+  const push = (from: number, to: number) => {
+    const raw = text.slice(from, to)
     const trimmed = raw.trim()
-    if (trimmed) out.push({ text: trimmed, start: m.index + raw.indexOf(trimmed) })
-    if (m[0].length === 0) re.lastIndex++
+    if (trimmed) out.push({ text: trimmed, start: from + raw.indexOf(trimmed) })
   }
+  let m: RegExpExecArray | null
+  while ((m = boundary.exec(text))) {
+    const end = m.index + m[0].length
+    push(last, end)
+    last = end
+    if (m[0].length === 0) boundary.lastIndex++
+  }
+  push(last, text.length)
   return out
 }

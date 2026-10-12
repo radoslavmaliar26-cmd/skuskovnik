@@ -3,7 +3,9 @@ import { db } from '../db/db'
 import type { Lecture, Subject } from '../db/types'
 import { loadDemo } from '../demo/loadDemo'
 import { fmtDate, fmtDuration } from '../lib/text'
-import { useLive } from '../ui/hooks'
+import { useLive, useSettings } from '../ui/hooks'
+import { local } from '../lib/clipboard'
+import { isIOS, isStandalone } from './OnboardingPage'
 import { Empty, TopBar } from '../ui/Layout'
 import { navigate } from '../ui/router'
 import { segProgress, StatusBadge, type SegProgress } from '../ui/status'
@@ -16,6 +18,8 @@ interface Group {
 
 export function HomePage() {
   const [busy, setBusy] = useState(false)
+  const settings = useSettings()
+  const [hideInstall, setHideInstall] = useState(() => local.get('skuskovnik:skryInstal', false))
   const groups = useLive(async (): Promise<Group[]> => {
     const subjects = await db.subjects.orderBy('createdAt').toArray()
     const lectures = await db.lectures.orderBy('createdAt').reverse().toArray()
@@ -53,6 +57,25 @@ export function HomePage() {
         <a className="btn block big" href="#/nova">
           ＋ Nová prednáška
         </a>
+        {!isStandalone() && isIOS() && !hideInstall ? (
+          <div className="info-box small" style={{ marginTop: 12 }}>
+            📲 Pre najlepší zážitok si appku pridaj na plochu: Safari → Zdieľať → <b>Pridať na plochu</b>. Pozor: appka na ploche má vlastné úložisko – kľúče zadaj až tam.{' '}
+            <button
+              className="btn small ghost"
+              onClick={() => {
+                setHideInstall(true)
+                local.set('skuskovnik:skryInstal', true)
+              }}
+            >
+              Skryť
+            </button>
+          </div>
+        ) : null}
+        {settings && !settings.keys[settings.provider] && groups?.some((g) => g.lectures.some((x) => x.l.status === 'transcribing' || x.l.status === 'recording')) ? (
+          <div className="warn-box small" style={{ marginTop: 12 }}>
+            🔑 Na prepis nahrávok treba API kľúč. <a href="#/nastavenia">Zadaj ho v Nastaveniach</a> – Groq je zadarmo.
+          </div>
+        ) : null}
         {groups === undefined ? null : groups.length === 0 ? (
           <Empty ico="🎓" title="Zatiaľ žiadne prednášky">
             <p>Nahraj prednášku, importuj zvukový súbor alebo vlož hotový prepis. Appka z neho spraví materiál a test.</p>

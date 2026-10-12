@@ -73,9 +73,9 @@ export class CutPolicy {
     return this.silenceStart !== null && elapsedMs - this.silenceStart >= this.silenceMs
   }
 
-  /** Segment obsahoval reč (aspoň ~1,5 s nad prahom reči). */
+  /** Segment obsahoval reč (aspoň ~1 s nad prahom reči; radšej prepísať ticho ako stratiť reč). */
   get hasSpeech() {
-    return this.speechMs >= 1500
+    return this.speechMs >= 1000
   }
 }
 

@@ -5,9 +5,12 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // GitHub Pages: https://radoslavmaliar26-cmd.github.io/skuskovnik/
 const BASE = '/skuskovnik/'
+const d = new Date()
+const APP_VERSION = `1.0 (${d.getDate()}. ${d.getMonth() + 1}. ${d.getFullYear()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')})`
 
 export default defineConfig({
   base: BASE,
+  define: { __APP_VERSION__: JSON.stringify(APP_VERSION) },
   build: {
     outDir: 'docs',
     emptyOutDir: true,

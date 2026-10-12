@@ -68,3 +68,16 @@ describe('examCues – findCues', () => {
     expect(cues[1]).toMatchObject({ typ: 'dolezite', t: 120 })
   })
 })
+
+describe('delenie na vety', () => {
+  it('dátumy a desatinné čísla nerozdelia vetu', async () => {
+    const { splitSentences } = await import('../lib/text')
+    const s = splitSentences('Zapíšte si: prvá písomka bude 12. 11. 2026 o desiatej. Modul je 2.1 GPa! Protokoly do 18. 12. Na písomku si prineste kalkulačku.')
+    expect(s.map((x) => x.text)).toEqual([
+      'Zapíšte si: prvá písomka bude 12. 11. 2026 o desiatej.',
+      'Modul je 2.1 GPa!',
+      'Protokoly do 18. 12.',
+      'Na písomku si prineste kalkulačku.',
+    ])
+  })
+})

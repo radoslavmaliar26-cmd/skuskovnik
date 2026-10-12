@@ -17,7 +17,7 @@ export function NewLecturePage({ query }: { query: URLSearchParams }) {
   const [subjectId, setSubjectId] = useState<string>('')
   const [newName, setNewName] = useState('')
   const [lang, setLang] = useState<Lang>('sk')
-  const [title, setTitle] = useState(`Prednáška ${fmtDate(Date.now())}`)
+  const [title, setTitle] = useState(() => `Prednáška ${fmtDate(Date.now())}`)
   const [source, setSource] = useState<Source>((query.get('zdroj') as Source) || 'nahravat')
   const [text, setText] = useState('')
   const [busy, setBusy] = useState<string | null>(null)

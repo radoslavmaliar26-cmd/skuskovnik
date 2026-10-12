@@ -122,7 +122,7 @@ export function TranscriptTab({
                 ) : (
                   <>
                     <span>{highlight(p.text, ranges)}</span>{' '}
-                    {pc.length ? <span className="small">{pc.map((c) => CUE_ICON[c.typ]).join('')}</span> : null}
+                    {pc.length ? <span className="small">{[...new Set(pc.map((c) => CUE_ICON[c.typ]))].join('')}</span> : null}
                     <button
                       className="time-link no-print"
                       style={{ marginLeft: 6, background: 'transparent' }}
