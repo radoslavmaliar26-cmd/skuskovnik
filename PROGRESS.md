@@ -8,7 +8,7 @@ Priebežný stav autonómnej práce. Pri pokračovaní po prerušení začni tu.
 - [x] Fáza 4 – Materiál (režim A aj B), schéma, validácia, overenie citátov, zobrazenie
 - [x] Fáza 5 – Testy (P0)
 - [x] Fáza 6 – Nastavenia, onboarding, chybové stavy, offline, leštenie UI
-- [ ] Fáza 7 – P1 funkcie
+- [x] Fáza 7 – P1 funkcie
 - [ ] Fáza 8 – Kontrola kvality, opravy, dokumentácia
 - [ ] Fáza 9 – P2 funkcie
 

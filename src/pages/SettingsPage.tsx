@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { AnthropicProvider } from '../ai/anthropic'
 import { db, saveSettings } from '../db/db'
 import { exportBackup, importBackup, wipeAll } from '../db/backup'
@@ -119,7 +119,7 @@ function KeyField({
 
 function TextSetting({ label, value, onSave, list, placeholder, help }: { label: string; value: string; onSave: (v: string) => void; list?: string[]; placeholder?: string; help?: string }) {
   const [v, setV] = useState(value)
-  const id = useRef(`dl-${Math.random().toString(36).slice(2)}`).current
+  const id = useId()
   useEffect(() => setV(value), [value])
   return (
     <label className="field">
