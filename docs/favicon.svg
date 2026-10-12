@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#1e3a8a"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <!-- otvorená kniha -->
+  <path d="M256 150 C 210 120, 150 115, 100 125 L 100 375 C 150 365, 210 370, 256 400 Z" fill="#f8fafc"/>
+  <path d="M256 150 C 302 120, 362 115, 412 125 L 412 375 C 362 365, 302 370, 256 400 Z" fill="#e2e8f0"/>
+  <path d="M256 150 L 256 400" stroke="#94a3b8" stroke-width="6"/>
+  <!-- zvuková vlna -->
+  <g stroke="#dc2626" stroke-width="16" stroke-linecap="round">
+    <line x1="132" y1="255" x2="132" y2="285"/>
+    <line x1="162" y1="225" x2="162" y2="315"/>
+    <line x1="192" y1="200" x2="192" y2="340"/>
+    <line x1="222" y1="240" x2="222" y2="300"/>
+    <line x1="290" y1="230" x2="290" y2="310"/>
+    <line x1="320" y1="195" x2="320" y2="345"/>
+    <line x1="350" y1="220" x2="350" y2="320"/>
+    <line x1="380" y1="250" x2="380" y2="290"/>
+  </g>
+</svg>
