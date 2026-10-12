@@ -100,7 +100,7 @@ export function HomePage() {
                     <a
                       key={l.id}
                       className="list-item"
-                      href={l.status === 'recording' && !l.interrupted ? `#/nahravat/${l.id}` : `#/p/${l.id}`}
+                      href={l.status === 'recording' && l.source === 'live' ? `#/zivy/${l.id}` : l.status === 'recording' && !l.interrupted ? `#/nahravat/${l.id}` : `#/p/${l.id}`}
                     >
                       <div className="grow">
                         <div className="title">{l.title}</div>

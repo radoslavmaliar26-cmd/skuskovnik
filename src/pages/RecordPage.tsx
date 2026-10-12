@@ -8,6 +8,7 @@ import { useLive, useOnline, useSettings, useStore } from '../ui/hooks'
 import { TopBar } from '../ui/Layout'
 import { navigate } from '../ui/router'
 import { segProgress } from '../ui/status'
+import { PhotoButton } from '../ui/Photos'
 import { toast } from '../ui/toast'
 
 export function RecordPage({ lectureId }: { lectureId?: string }) {
@@ -206,6 +207,8 @@ export function RecordPage({ lectureId }: { lectureId?: string }) {
                 ⏹ Ukončiť
               </button>
             </div>
+            <div className="spacer" />
+            <PhotoButton lectureId={lectureId} getTime={() => recorderState.get().elapsedSec} className="btn block ghost" />
             <div className="spacer" />
             <div className="card flat small">
               <div className="row">

@@ -24,6 +24,7 @@ export function GenerateCard({ lecture, transcript, marks, regenerate }: { lectu
   const online = useOnline()
   const gen = useStore(genState)[lecture.id]
   const subject = useLive(() => db.subjects.get(lecture.subjectId), [lecture.subjectId])
+  const photoCount = useLive(() => db.photos.where('lectureId').equals(lecture.id).count(), [lecture.id]) ?? 0
   const [mode, setMode] = useState<AiMode | null>(null)
   const [draft, setDraftState] = useState<Draft>(() => local.get<Draft>(draftKey(lecture.id), { split: false, parts: [[]] }))
   const [chunk, setChunk] = useState(0)
@@ -175,6 +176,11 @@ export function GenerateCard({ lecture, transcript, marks, regenerate }: { lectu
           : 'Claude cez Anthropic API vytvorí materiál sám. Platí sa podľa spotreby z tvojho API účtu.'}
       </p>
 
+      {photoCount ? (
+        <p className="small muted">
+          📷 Fotky z prednášky ({photoCount}) sa Claudovi posielajú automaticky len v režime API.
+        </p>
+      ) : null}
       {activeMode === 'api' ? (
         <>
           {!hasKey ? (

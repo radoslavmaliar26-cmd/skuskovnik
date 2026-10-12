@@ -51,14 +51,24 @@ function StatusCard({ lecture, segments, onTab }: { lecture: Lecture; segments: 
       <div className="card">
         <b>Prednáška je prázdna.</b>
         <p className="small muted">Spusti nahrávanie, alebo ju zmaž a vytvor novú s importom či vloženým textom.</p>
-        <a className="btn block red" href={`#/nahravat/${lecture.id}`}>
-          ● Nahrávať
+        <a className="btn block red" href={lecture.source === 'live' ? `#/zivy/${lecture.id}` : `#/nahravat/${lecture.id}`}>
+          ● {lecture.source === 'live' ? 'Živý prepis' : 'Nahrávať'}
         </a>
       </div>
     )
   }
 
   if (lecture.status === 'recording') {
+    if (lecture.source === 'live') {
+      return (
+        <div className="card">
+          <b>🧪 Živý prepis</b>
+          <a className="btn block red" style={{ marginTop: 8 }} href={`#/zivy/${lecture.id}`}>
+            Otvoriť živý prepis
+          </a>
+        </div>
+      )
+    }
     const live = rec.active && rec.lectureId === lecture.id && rec.phase !== 'interrupted'
     return (
       <div className="card">

@@ -513,6 +513,11 @@ export async function recoverRecordings() {
   }
   const lectures = await db.lectures.where('status').equals('recording').toArray()
   for (const l of lectures) {
+    if (l.source === 'live') {
+      const tr = await db.transcripts.get(l.id)
+      await db.lectures.update(l.id, { status: tr?.paragraphs.length ? 'transcribed' : 'draft' })
+      continue
+    }
     const segs = await db.segments.where('lectureId').equals(l.id).toArray()
     const durationSec = Math.max(l.durationSec, ...segs.map((s) => s.startSec + s.durationSec), 0)
     await db.lectures.update(l.id, { interrupted: true, durationSec })

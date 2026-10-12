@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import { HomePage } from './pages/HomePage'
 import { LecturePage } from './pages/LecturePage'
+import { LivePage } from './pages/LivePage'
 import { NewLecturePage } from './pages/NewLecturePage'
 import { OnboardingPage } from './pages/OnboardingPage'
 import { RecordPage } from './pages/RecordPage'
@@ -68,6 +69,9 @@ export default function App() {
       break
     case 'nahravat':
       page = <RecordPage lectureId={second} />
+      break
+    case 'zivy':
+      page = <LivePage lectureId={second} />
       break
     case 'p':
       page = <LecturePage lectureId={second} tab={third} query={route.query} />

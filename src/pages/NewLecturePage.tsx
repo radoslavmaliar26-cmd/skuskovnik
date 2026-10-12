@@ -4,11 +4,12 @@ import { createLecture, createSubject, db, deleteLecture } from '../db/db'
 import type { Lang } from '../db/types'
 import { fmtBytes, fmtDate } from '../lib/text'
 import { parsePastedTranscript } from '../transcription/assemble'
+import { liveSpeechSupported } from '../audio/liveSpeech'
 import { useLive } from '../ui/hooks'
 import { Progress, TopBar } from '../ui/Layout'
 import { navigate } from '../ui/router'
 
-type Source = 'nahravat' | 'import' | 'text'
+type Source = 'nahravat' | 'import' | 'text' | 'zivy'
 const NEW = '__new__'
 
 export function NewLecturePage({ query }: { query: URLSearchParams }) {
@@ -83,6 +84,13 @@ export function NewLecturePage({ query }: { query: URLSearchParams }) {
       navigate(`/p/${l.id}`, true)
     })
 
+  const startLive = () =>
+    run(async () => {
+      const sid = await resolveSubject()
+      const l = await createLecture(sid, title, 'live')
+      navigate(`/zivy/${l.id}`, true)
+    })
+
   const saveText = () =>
     run(async () => {
       const paragraphs = parsePastedTranscript(text)
@@ -147,6 +155,13 @@ export function NewLecturePage({ query }: { query: URLSearchParams }) {
             📝 Vložiť text
           </button>
         </div>
+        {liveSpeechSupported() ? (
+          <p className="small center" style={{ margin: '8px 0 0' }}>
+            <button className={`btn small ${source === 'zivy' ? '' : 'ghost'}`} onClick={() => setSource('zivy')}>
+              🧪 Živý prepis (experimentálne)
+            </button>
+          </p>
+        ) : null}
         <div className="spacer" />
 
         {error ? <div className="err">{error}</div> : null}
@@ -193,6 +208,17 @@ export function NewLecturePage({ query }: { query: URLSearchParams }) {
                 </button>
               </>
             )}
+          </div>
+        ) : null}
+
+        {source === 'zivy' ? (
+          <div className="card">
+            <p className="small muted" style={{ marginTop: 0 }}>
+              🧪 Experimentálne: text vzniká priamo počas prednášky cez rozpoznávanie reči v prehliadači (bez API kľúča). Zvuk sa neukladá a presnosť je nižšia ako pri bežnom nahrávaní.
+            </p>
+            <button className="btn block big" onClick={startLive}>
+              🗣 Pokračovať k živému prepisu
+            </button>
           </div>
         ) : null}
 

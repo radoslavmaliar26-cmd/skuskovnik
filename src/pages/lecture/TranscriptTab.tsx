@@ -4,6 +4,7 @@ import type { Lecture, Mark, Paragraph, Transcript } from '../../db/types'
 import { CUE_LABELS, findCues, type Cue } from '../../exam/examCues'
 import { fmtTime } from '../../lib/text'
 import { highlight, searchRanges, type Range } from '../../ui/Highlight'
+import { PhotoStrip } from '../../ui/Photos'
 import { toast } from '../../ui/toast'
 
 const CUE_ICON = { skuska: '🔴', dolezite: '🟠', organizacne: '📅' } as const
@@ -79,6 +80,7 @@ export function TranscriptTab({
         </label>
         {matches !== null ? <div className="muted">Výsledky: {matches} {matches === 1 ? 'odsek' : 'odsekov'}</div> : null}
       </div>
+      <PhotoStrip lectureId={lecture.id} />
       {transcript?.edited ? <p className="small muted">✏️ Prepis bol ručne upravený.</p> : null}
       <div className="card">
         {paragraphs.map((p, i) => {

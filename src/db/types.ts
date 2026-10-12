@@ -20,7 +20,7 @@ export type LectureStatus =
   | 'done'
   | 'error'
 
-export type LectureSource = 'record' | 'import' | 'text' | 'demo'
+export type LectureSource = 'record' | 'import' | 'text' | 'demo' | 'live'
 
 export interface Lecture {
   id: string
