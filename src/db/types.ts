@@ -119,6 +119,8 @@ export interface StoredTest {
   questions: Question[]
   origin: 'material' | 'new' | 'retry' | 'subject'
   createdAt: number
+  /** Pri teste z celého predmetu: z ktorej prednášky je otázka (id otázky → id prednášky) */
+  questionLectures?: Record<string, string>
 }
 
 export interface QuestionResult {
