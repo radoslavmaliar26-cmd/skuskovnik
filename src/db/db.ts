@@ -4,6 +4,7 @@ import type {
   StoredTest, Subject, Transcript, Usage,
 } from './types'
 import { DEFAULT_SETTINGS } from './types'
+import { uid } from '../lib/text'
 
 export class SkuskovnikDB extends Dexie {
   subjects!: Table<Subject, string>
@@ -84,6 +85,31 @@ export async function addUsage(patch: Partial<Omit<Usage, 'id'>>) {
       outputTokens: cur.outputTokens + (patch.outputTokens ?? 0),
     })
   })
+}
+
+export async function createSubject(name: string, language: Subject['language'] = 'sk'): Promise<Subject> {
+  const trimmed = name.trim() || 'Bez predmetu'
+  const existing = await db.subjects.where('name').equals(trimmed).first()
+  if (existing) return existing
+  const s: Subject = { id: uid(), name: trimmed, language, glossary: '', createdAt: Date.now() }
+  await db.subjects.add(s)
+  return s
+}
+
+export async function createLecture(subjectId: string, title: string, source: Lecture['source']): Promise<Lecture> {
+  const now = Date.now()
+  const l: Lecture = {
+    id: uid(),
+    subjectId,
+    title: title.trim() || 'Prednáška',
+    createdAt: now,
+    source,
+    status: 'draft',
+    durationSec: 0,
+    updatedAt: now,
+  }
+  await db.lectures.add(l)
+  return l
 }
 
 /** Zmaže prednášku so všetkými súvisiacimi dátami. */
