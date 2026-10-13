@@ -130,3 +130,13 @@ describe('schéma a demo', () => {
     expect(s).toMatch(/naSkuske/)
   })
 })
+
+describe('parser – kód v materiáli', () => {
+  it('``` vo vnútri JSON reťazca (bez vonkajšieho bloku) nerozbije parsovanie', () => {
+    const m = structuredClone(DEMO_MATERIAL)
+    m.sekcie[0].obsah = 'Príklad:\n```python\nprint(1)\n```\nkoniec'
+    const r = parseMaterialResponse([JSON.stringify(m)])
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.data.sekcie[0].obsah).toContain('```python')
+  })
+})

@@ -8,19 +8,16 @@ import type { RawPart } from './provider'
  * - zacyklené opakovania tej istej vety.
  */
 
-// vždy halucinácia, ak tvorí celý segment
+// typické „titulkové“ vety z ticha – odstraňujú sa len ako samostatné krátke vety
 const ALWAYS = [
-  /titulky (vytvoril|vytvorila|vytvorili|pripravil|vytvoril|vytvorila|zpracoval|preklad)/,
+  /titulky (vytvoril|vytvorila|vytvorili|pripravil|zpracoval|preklad)/,
   /^titulky\b/,
   /\bamara\.org\b/,
   /^(subtitles|captions) by\b/,
-  /\bodoberajte (nas|nas kanal|kanal)\b/,
-  /\bodebirejte\b/,
-  /\bsledujte nas\b/,
+  /^(odoberajte|odebirejte|sledujte nas)\b/,
   /^thanks? for watching\b/,
   /^dakujeme za (pozretie|sledovanie)\b/,
-  /^dekujeme za (zhlednuti|pozornost)\b/,
-  /\bwww\.[a-z0-9-]+\.[a-z]{2,}\b/,
+  /^dekujeme za zhlednuti\b/,
 ]
 
 // halucinácia len v tichu (inak to môže reálne zaznieť)
@@ -35,6 +32,19 @@ const IN_SILENCE = [
 function isAlways(t: string) {
   const n = normalize(t).trim()
   return ALWAYS.some((r) => r.test(n))
+}
+
+/**
+ * Odstráni z textu krátke vety typu „Titulky vytvoril…“ (max. ~12 slov).
+ * Zvyšok ponechá – dlhý úsek reči sa kvôli jednej vete nikdy nezahodí.
+ */
+export function stripCreditSentences(text: string): string {
+  const sentences = text.match(/[^.!?…]+[.!?…]*\s*/g)
+  if (!sentences) return text
+  return sentences
+    .filter((s) => !(words(s).length <= 12 && isAlways(s)))
+    .join('')
+    .trim()
 }
 
 function isSilencePhrase(t: string) {
@@ -83,7 +93,8 @@ export function filterHallucinations(parts: RawPart[], opts: { timed: boolean })
     if (p.compressionRatio !== undefined && p.compressionRatio > 2.6) {
       text = collapseRepeats(text)
     }
-    if (isAlways(text)) continue
+    text = stripCreditSentences(text)
+    if (!text) continue
     if (isSilencePhrase(text)) {
       const silentByMeta = p.noSpeechProb !== undefined && p.noSpeechProb > 0.3
       const lowConfidence = p.avgLogprob !== undefined && p.avgLogprob < -0.8

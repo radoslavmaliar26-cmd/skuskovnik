@@ -19,7 +19,9 @@ const FENCE = /```[a-zA-Z]*[ \t]*\r?\n?/
 export function stripFences(part: string): string {
   let s = part.replace(/\r\n/g, '\n')
   const open = s.search(FENCE)
-  if (open >= 0) {
+  const brace = s.indexOf('{')
+  // JSON začína pred prvým ``` → ohraničenie je vo vnútri reťazca (napr. kód v materiáli), nechaj ho tak
+  if (open >= 0 && !(brace >= 0 && brace < open)) {
     const m = s.slice(open).match(FENCE)!
     s = s.slice(open + m[0].length)
     const close = s.lastIndexOf('```')

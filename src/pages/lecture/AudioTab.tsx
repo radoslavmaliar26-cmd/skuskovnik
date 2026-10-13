@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { db, deleteLectureAudio, getSegmentBlob } from '../../db/db'
+import { deleteLectureAudio, getSegmentBlob } from '../../db/db'
 import type { Lecture, Segment } from '../../db/types'
 import { fmtBytes, fmtTime } from '../../lib/text'
-import { toast } from '../../ui/toast'
+import { transcribeSkipped } from '../../transcription/queue'
+import { toast, toastError } from '../../ui/toast'
 
 const SEG_STATUS: Record<Segment['status'], string> = {
   recording: 'nahráva sa',
@@ -45,12 +46,17 @@ export function AudioTab({ lecture, segments, startT }: { lecture: Lecture; segm
     const seg = startT !== undefined ? segAt(startT) : sorted[0]
     if (!seg) return
     void load(seg).then(() => setPendingOffset(startT !== undefined ? Math.max(0, startT - seg.startSec) : null))
-    return () => {
-      if (urlRef.current) URL.revokeObjectURL(urlRef.current)
-      urlRef.current = null
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startT, sorted.length, lecture.audioDeleted])
+
+  // URL uvoľni až pri odchode z obrazovky (nie pri zmene počtu úsekov – prerušilo by to prehrávanie)
+  useEffect(
+    () => () => {
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current)
+      urlRef.current = null
+    },
+    [],
+  )
 
   const playFrom = (offset: number) => {
     const a = audioRef.current
@@ -86,6 +92,8 @@ export function AudioTab({ lecture, segments, startT }: { lecture: Lecture; segm
   }
 
   const totalSize = sorted.reduce((s, x) => s + (x.size || 0), 0)
+  const quiet = sorted.filter((s) => s.status === 'skipped' && s.size > 0).length
+  const canRetryQuiet = quiet > 0 && !lecture.audioDeleted && lecture.status !== 'recording' && lecture.status !== 'transcribing'
 
   return (
     <div>
@@ -135,10 +143,11 @@ export function AudioTab({ lecture, segments, startT }: { lecture: Lecture; segm
                   <button
                     className="btn small ghost"
                     onClick={async () => {
+                      // iOS nedovolí spustiť prehrávanie po načítaní z databázy – úsek len pripravíme
                       const url = await load(s)
-                      if (url && audioRef.current) {
-                        audioRef.current.src = url
-                        void audioRef.current.play().catch(() => {})
+                      if (url) {
+                        window.scrollTo({ top: 0, behavior: 'smooth' })
+                        toast('Úsek je pripravený – ťukni na ▶︎ v prehrávači')
                       }
                     }}
                   >
@@ -148,6 +157,22 @@ export function AudioTab({ lecture, segments, startT }: { lecture: Lecture; segm
               </div>
             ))}
           </div>
+          {canRetryQuiet ? (
+            <button
+              className="btn block secondary"
+              style={{ marginBottom: 10 }}
+              onClick={async () => {
+                try {
+                  await transcribeSkipped(lecture.id)
+                  toast('Tiché úseky sa prepisujú')
+                } catch (e) {
+                  toastError((e as Error).message)
+                }
+              }}
+            >
+              Prepísať aj tiché úseky ({quiet})
+            </button>
+          ) : null}
           {!lecture.audioDeleted ? (
             <button className="btn block danger" onClick={() => void removeAudio()}>
               🗑 Zmazať audio ({fmtBytes(totalSize)}) – prepis zostane
@@ -159,7 +184,3 @@ export function AudioTab({ lecture, segments, startT }: { lecture: Lecture; segm
   )
 }
 
-export async function lectureHasAudio(lectureId: string) {
-  const segs = await db.segments.where('lectureId').equals(lectureId).primaryKeys()
-  return segs.length > 0
-}

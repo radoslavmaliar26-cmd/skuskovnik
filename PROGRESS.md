@@ -9,8 +9,8 @@ Priebežný stav autonómnej práce. Pri pokračovaní po prerušení začni tu.
 - [x] Fáza 5 – Testy (P0)
 - [x] Fáza 6 – Nastavenia, onboarding, chybové stavy, offline, leštenie UI
 - [x] Fáza 7 – P1 funkcie
-- [ ] Fáza 8 – Kontrola kvality, opravy, dokumentácia
-- [ ] Fáza 9 – P2 funkcie
+- [x] Fáza 8 – Kontrola kvality, opravy, dokumentácia
+- [x] Fáza 9 – P2 funkcie (fotky tabule, štatistiky, počítadlo spotreby, experimentálny živý prepis)
 
 ## Poznámky
 - Repo: https://github.com/radoslavmaliar26-cmd/skuskovnik (vytvorené počas práce, nebolo pripravené)

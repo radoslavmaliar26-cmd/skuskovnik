@@ -223,3 +223,13 @@ describe('fronta prepisu', () => {
     expect(provider.calls).toHaveLength(0)
   })
 })
+
+describe('halucinácie – nezahodiť skutočnú reč', () => {
+  it('URL alebo „sledujte nás“ v dlhom texte zostane, odstráni sa len krátka veta s titulkami', async () => {
+    const { filterHallucinations } = await import('./hallucinations')
+    const long = 'Slajdy sú na www.fei.stuba.sk v sekcii predmetu. Dnes preberieme napätie a pretvorenie. Titulky vytvoril JohnyX.'
+    const out = filterHallucinations([{ start: 0, end: 300, text: long }], { timed: false })
+    expect(out).toHaveLength(1)
+    expect(out[0].text).toBe('Slajdy sú na www.fei.stuba.sk v sekcii predmetu. Dnes preberieme napätie a pretvorenie.')
+  })
+})

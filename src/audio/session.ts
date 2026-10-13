@@ -1,6 +1,8 @@
 import { db, getSettings } from '../db/db'
-import type { MarkType, Segment } from '../db/types'
-import { uid } from '../lib/text'
+import type { LectureStatus, MarkType, Segment, Settings } from '../db/types'
+import { fmtTime, uid } from '../lib/text'
+import { supportsVerbose } from '../transcription/provider'
+import { updateLecture } from '../transcription/queue'
 import { Store } from '../ui/hooks'
 import { CutPolicy, meterValue, rms } from './levels'
 import { extForMime, pickRecorderMime } from './mime'
@@ -8,6 +10,7 @@ import { extForMime, pickRecorderMime } from './mime'
 /**
  * Nahrávanie prednášky po segmentoch s ochranou proti strate dát.
  * Beží mimo Reactu (singleton), takže prepínanie obrazoviek nahrávanie nepreruší.
+ * Všetky operácie (rez úseku, pauza, stop, prerušenie) sa vykonávajú postupne – nikdy súbežne.
  */
 
 export type RecPhase = 'idle' | 'starting' | 'recording' | 'paused' | 'interrupted' | 'stopping'
@@ -22,7 +25,10 @@ export interface RecorderState {
   level: number
   segmentIndex: number
   wakeLock: 'on' | 'off' | 'unsupported'
+  /** Dôvod prerušenia (v stave „interrupted“) */
   error?: string
+  /** Varovanie počas nahrávania (napr. zlyhalo ukladanie, chýba časť zvuku) */
+  warning?: string
   lastMark?: { type: MarkType; t: number; at: number }
   mime?: string
 }
@@ -63,6 +69,15 @@ export function micErrorText(e: unknown): string {
   return `Mikrofón sa nepodarilo spustiť: ${(e as Error)?.message ?? String(e)}`
 }
 
+/**
+ * Maximálna dĺžka úseku pre zvolený model prepisu. Modely bez časových značiek (gpt-4o-*)
+ * majú obmedzený výstup (~2 000 tokenov), preto im posielame kratšie úseky.
+ */
+export function maxSegmentSec(settings: Settings): number {
+  const model = settings.models[settings.provider] ?? ''
+  return supportsVerbose(model) ? 600 : 240
+}
+
 interface SegState {
   id: string
   index: number
@@ -74,10 +89,15 @@ interface SegState {
   policy: CutPolicy
   maxLevel: number
   writeChain: Promise<void>
-  finishing: boolean
+  /** Vyrieši sa udalosťou „stop“ (príde až po poslednom „dataavailable“) */
+  stopped: Promise<void>
+  finishPromise: Promise<void> | null
+  finalized: boolean
+  emptyAtFinalize: boolean
 }
 
 const TIMESLICE = 10_000
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 class RecordingSession {
   lectureId: string
@@ -91,9 +111,14 @@ class RecordingSession {
   private nextIndex = 0
   private timer: ReturnType<typeof setInterval> | null = null
   private wakeLock: WakeLockSentinel | null = null
-  private rotating = false
   private targetMs = 5 * 60_000
   private muteTimer: ReturnType<typeof setTimeout> | null = null
+  private mutedAt: number | null = null
+  private writeFailures = 0
+  private aborted = false
+  /** Reťaz operácií – zabezpečí, že sa nevykonávajú súbežne */
+  private opChain: Promise<unknown> = Promise.resolve()
+  private opRunning = false
 
   constructor(lectureId: string) {
     this.lectureId = lectureId
@@ -103,13 +128,32 @@ class RecordingSession {
     recorderState.set((s) => ({ ...s, ...patch }))
   }
 
+  private phase() {
+    return recorderState.get().phase
+  }
+
+  /** Zaradí operáciu do reťaze (vykoná sa po dokončení predchádzajúcich). */
+  private op<T>(fn: () => Promise<T>): Promise<T> {
+    const run = async () => {
+      this.opRunning = true
+      try {
+        return await fn()
+      } finally {
+        this.opRunning = false
+      }
+    }
+    const p = this.opChain.then(run, run)
+    this.opChain = p.catch(() => {})
+    return p
+  }
+
   /** Musí sa volať priamo z ťuknutia (AudioContext a mikrofón vyžadujú gesto používateľa). */
   async open(gapBefore: boolean) {
     // AudioContext vytvoríme ešte synchrónne v rámci gesta (Safari ho inak nechá pozastavený)
     const AC: typeof AudioContext = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
     this.ctx = AC ? new AC() : null
     void this.ctx?.resume().catch(() => {})
-    this.set({ active: true, lectureId: this.lectureId, phase: 'starting', error: undefined })
+    this.set({ active: true, lectureId: this.lectureId, phase: 'starting', error: undefined, warning: undefined })
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: { channelCount: 1, echoCancellation: false, noiseSuppression: true, autoGainControl: true },
@@ -119,38 +163,51 @@ class RecordingSession {
       this.ctx = null
       throw e
     }
-    const settings = await getSettings()
-    this.targetMs = Math.max(1, settings.segmentMinutes || 5) * 60_000
     const lecture = await db.lectures.get(this.lectureId)
-    const segs = await db.segments.where('lectureId').equals(this.lectureId).toArray()
-    this.nextIndex = segs.reduce((m, s) => Math.max(m, s.index + 1), 0)
-    this.baseSec = Math.max(lecture?.durationSec ?? 0, ...segs.map((s) => s.startSec + s.durationSec))
-    this.mime = pickRecorderMime()
+    if (!lecture) {
+      await this.release()
+      throw new Error('Prednáška neexistuje.')
+    }
+    const prevStatus: LectureStatus = lecture.status
+    try {
+      const settings = await getSettings()
+      const minutes = Math.max(1, settings.segmentMinutes || 5)
+      this.targetMs = Math.min(minutes * 60, maxSegmentSec(settings) - 30) * 1000
+      const segs = await db.segments.where('lectureId').equals(this.lectureId).toArray()
+      this.nextIndex = segs.reduce((m, s) => Math.max(m, s.index + 1), 0)
+      this.baseSec = Math.max(lecture.durationSec ?? 0, ...segs.map((s) => s.startSec + s.durationSec))
+      this.mime = pickRecorderMime()
 
-    if (this.ctx) {
-      try {
-        const src = this.ctx.createMediaStreamSource(this.stream)
-        this.analyser = this.ctx.createAnalyser()
-        this.analyser.fftSize = 2048
-        src.connect(this.analyser)
-        this.buf = new Float32Array(this.analyser.fftSize)
-      } catch {
-        this.analyser = null
+      if (this.ctx) {
+        try {
+          const src = this.ctx.createMediaStreamSource(this.stream)
+          this.analyser = this.ctx.createAnalyser()
+          this.analyser.fftSize = 2048
+          src.connect(this.analyser)
+          this.buf = new Float32Array(this.analyser.fftSize)
+        } catch {
+          this.analyser = null
+        }
       }
+      for (const track of this.stream.getAudioTracks()) {
+        track.addEventListener('ended', () => void this.interrupt('Mikrofón bol prerušený (napr. hovorom alebo inou appkou).'))
+        track.addEventListener('mute', () => this.onMute())
+        track.addEventListener('unmute', () => void this.onUnmute())
+      }
+      if (gapBefore) {
+        await db.marks.add({ id: uid(), lectureId: this.lectureId, type: 'gap', t: this.baseSec, createdAt: Date.now() })
+      }
+      await db.lectures.update(this.lectureId, { status: 'recording', interrupted: false, updatedAt: Date.now() })
+      await this.startSegment(gapBefore)
+    } catch (e) {
+      // nič neunikne: uvoľni mikrofón a vráť stav prednášky
+      await this.release()
+      await db.lectures.update(this.lectureId, { status: prevStatus }).catch(() => {})
+      throw e
     }
-    for (const track of this.stream.getAudioTracks()) {
-      track.addEventListener('ended', () => void this.interrupt('Mikrofón bol prerušený (napr. hovorom alebo inou appkou).'))
-      track.addEventListener('mute', () => this.onMute())
-      track.addEventListener('unmute', () => this.onUnmute())
-    }
-    if (gapBefore) {
-      await db.marks.add({ id: uid(), lectureId: this.lectureId, type: 'gap', t: this.baseSec, createdAt: Date.now() })
-    }
-    await db.lectures.update(this.lectureId, { status: 'recording', interrupted: false, updatedAt: Date.now() })
-    await this.startSegment(gapBefore)
-    await this.acquireWakeLock()
     this.timer = setInterval(() => this.tick(), 100)
     this.set({ phase: 'recording', mime: this.mime })
+    await this.acquireWakeLock()
   }
 
   private async startSegment(gapBefore: boolean) {
@@ -162,6 +219,7 @@ class RecordingSession {
       recorder = new MediaRecorder(this.stream)
     }
     const mime = recorder.mimeType || this.mime || 'audio/mp4'
+    let resolveStopped: () => void = () => {}
     const seg: SegState = {
       id: uid(),
       index: this.nextIndex++,
@@ -173,7 +231,10 @@ class RecordingSession {
       policy: new CutPolicy({ targetMs: this.targetMs }),
       maxLevel: 0,
       writeChain: Promise.resolve(),
-      finishing: false,
+      stopped: new Promise<void>((r) => (resolveStopped = r)),
+      finishPromise: null,
+      finalized: false,
+      emptyAtFinalize: false,
     }
     const row: Segment = {
       id: seg.id,
@@ -193,46 +254,81 @@ class RecordingSession {
     }
     await db.segments.add(row)
     recorder.ondataavailable = (e) => {
-      if (!e.data || e.data.size === 0) return
+      if (!e.data || e.data.size === 0 || this.aborted) return
       const blob = e.data
       const seq = seg.seq++
       // zápisy idú za sebou, aby sa zachovalo poradie kúskov
-      seg.writeChain = seg.writeChain.then(async () => {
-        try {
-          const data = await blob.arrayBuffer()
-          seg.size += data.byteLength
-          await db.chunks.add({ segmentId: seg.id, seq, data })
-          await db.segments.update(seg.id, { size: seg.size, durationSec: this.segElapsed(seg) })
-        } catch (err) {
-          console.error('Uloženie kúska zlyhalo', err)
-          this.set({ error: 'Nepodarilo sa uložiť časť nahrávky – môže byť plné úložisko.' })
-        }
-      })
+      seg.writeChain = seg.writeChain.then(() => this.saveChunk(seg, seq, blob))
     }
+    recorder.onstop = () => resolveStopped()
     recorder.onerror = () => void this.interrupt('Nahrávanie zlyhalo (chyba prehliadača).')
     recorder.start(TIMESLICE)
     this.seg = seg
     this.set({ segmentIndex: seg.index })
   }
 
+  private async saveChunk(seg: SegState, seq: number, blob: Blob) {
+    try {
+      const data = await blob.arrayBuffer()
+      await db.chunks.add({ segmentId: seg.id, seq, data })
+      seg.size += data.byteLength
+      this.writeFailures = 0
+      if (!seg.finalized) {
+        await db.segments.update(seg.id, { size: seg.size, durationSec: this.segElapsed(seg) })
+      } else {
+        // kúsok prišiel až po uzavretí úseku – nestratiť ho
+        const patch: Partial<Segment> = { size: seg.size }
+        if (seg.emptyAtFinalize) {
+          seg.emptyAtFinalize = false
+          Object.assign(patch, { status: 'pending', hasSpeech: true })
+        }
+        await db.segments.update(seg.id, patch)
+        notifySegments()
+      }
+    } catch (err) {
+      console.error('Uloženie kúska zlyhalo', err)
+      this.writeFailures++
+      this.set({ warning: 'Nepodarilo sa uložiť časť nahrávky – úložisko môže byť plné. Uvoľni miesto (napr. zmaž audio starých prednášok).' })
+      if (this.writeFailures >= 2) {
+        void this.interrupt('Nahrávanie sa zastavilo, lebo sa nedá ukladať (pravdepodobne je plné úložisko). Uvoľni miesto a pokračuj.')
+      }
+    }
+  }
+
   private segElapsed(seg: SegState) {
     return Math.max(0, (performance.now() - seg.startPerf) / 1000)
   }
 
-  /** Ukončí segment: počká na posledný kúsok, uloží dĺžku a pošle ho do fronty prepisu. */
-  private finishSegment(seg: SegState): Promise<void> {
-    if (seg.finishing) return seg.writeChain
-    seg.finishing = true
-    const dur = this.segElapsed(seg)
-    return new Promise<void>((resolve) => {
-      let done = false
-      const finalize = async () => {
-        if (done) return
-        done = true
+  /**
+   * Ukončí segment: počká na udalosť „stop“ (po poslednom kúsku), uloží dĺžku
+   * a pošle ho do fronty prepisu. Vždy sa dokončí – aj pri chybe databázy.
+   */
+  private finishSegment(seg: SegState, durOverride?: number): Promise<void> {
+    if (seg.finishPromise) return seg.finishPromise
+    const dur = durOverride ?? this.segElapsed(seg)
+    seg.finishPromise = (async () => {
+      try {
+        if (seg.recorder.state !== 'inactive') seg.recorder.stop()
+      } catch {
+        /* už zastavený */
+      }
+      // „stop“ príde aj po chybe; poistka pre prehliadače, ktoré ho nepošlú
+      await Promise.race([seg.stopped, sleep(15_000)])
+      await sleep(0)
+      try {
         await seg.writeChain
+        seg.finalized = true
         const chunkCount = await db.chunks.where('segmentId').equals(seg.id).count()
         if (chunkCount === 0) {
-          await db.segments.delete(seg.id)
+          seg.emptyAtFinalize = true
+          await db.segments.update(seg.id, { status: 'skipped', hasSpeech: false, durationSec: dur })
+          // ak ani neskôr nepríde žiadny kúsok, prázdny úsek zmaž
+          setTimeout(() => {
+            void (async () => {
+              const n = await db.chunks.where('segmentId').equals(seg.id).count()
+              if (n === 0) await db.segments.delete(seg.id)
+            })().catch(() => {})
+          }, 30_000)
         } else {
           // ak analyzátor nefungoval (nulová úroveň), radšej predpokladáme reč
           const hasSpeech = seg.policy.hasSpeech || seg.maxLevel < 1e-5
@@ -242,22 +338,16 @@ class RecordingSession {
             status: hasSpeech ? 'pending' : 'skipped',
             size: seg.size,
           })
-          const l = await db.lectures.get(this.lectureId)
-          if (l) await db.lectures.update(this.lectureId, { durationSec: Math.max(l.durationSec, seg.startSec + dur), updatedAt: Date.now() })
           notifySegments()
         }
-        resolve()
+        const l = await db.lectures.get(this.lectureId)
+        if (l) await db.lectures.update(this.lectureId, { durationSec: Math.max(l.durationSec, seg.startSec + dur), updatedAt: Date.now() })
+      } catch (e) {
+        console.error('Uzavretie úseku zlyhalo', e)
+        this.set({ warning: 'Úsek nahrávky sa nepodarilo úplne uložiť (chyba úložiska).' })
       }
-      seg.recorder.onstop = () => void finalize()
-      // poistka: niektoré prehliadače po prerušení „stop“ nevyvolajú
-      setTimeout(() => void finalize(), 4000)
-      try {
-        if (seg.recorder.state !== 'inactive') seg.recorder.stop()
-        else void finalize()
-      } catch {
-        void finalize()
-      }
-    })
+    })()
+    return seg.finishPromise
   }
 
   private tick() {
@@ -275,24 +365,26 @@ class RecordingSession {
     seg.maxLevel = Math.max(seg.maxLevel, level)
     const cut = seg.policy.update(elapsedMs, level)
     this.set({ elapsedSec: seg.startSec + elapsedMs / 1000, level: meterValue(level) })
-    if (cut && !this.rotating && recorderState.get().phase === 'recording') void this.rotate()
+    if (cut && !this.opRunning && this.phase() === 'recording') void this.rotate()
   }
 
   /** Zastaví aktuálny MediaRecorder a hneď spustí nový na tom istom streame. */
-  private async rotate() {
-    const old = this.seg
-    if (!old) return
-    this.rotating = true
-    try {
-      this.baseSec = old.startSec + this.segElapsed(old)
-      await this.startSegment(false)
-      await this.finishSegment(old)
-    } catch (e) {
-      console.error(e)
-      void this.interrupt('Nepodarilo sa začať nový úsek nahrávky.')
-    } finally {
-      this.rotating = false
-    }
+  private rotate() {
+    return this.op(async () => {
+      const old = this.seg
+      if (!old || this.phase() !== 'recording') return
+      const dur = this.segElapsed(old)
+      this.baseSec = old.startSec + dur
+      try {
+        await this.startSegment(false)
+      } catch (e) {
+        console.error(e)
+        this.seg = old
+        void this.interrupt('Nepodarilo sa začať nový úsek nahrávky.')
+        return
+      }
+      await this.finishSegment(old, dur)
+    })
   }
 
   /** Okamžite uloží, čo je nahraté (pri odchode z appky). */
@@ -304,20 +396,37 @@ class RecordingSession {
     }
   }
 
-  private onMute() {
-    this.flush()
+  private currentTime() {
+    return this.seg ? this.seg.startSec + this.segElapsed(this.seg) : this.baseSec
+  }
+
+  private armMuteCheck() {
     if (this.muteTimer) clearTimeout(this.muteTimer)
     this.muteTimer = setTimeout(() => {
       const muted = this.stream?.getAudioTracks().some((t) => t.muted)
-      if (muted && document.visibilityState === 'visible' && recorderState.get().phase === 'recording') {
+      if (muted && document.visibilityState === 'visible' && this.phase() === 'recording') {
         void this.interrupt('Mikrofón prestal posielať zvuk (systém ho prerušil).')
       }
     }, 3000)
   }
 
-  private onUnmute() {
+  private onMute() {
+    this.flush()
+    if (this.mutedAt === null) this.mutedAt = this.currentTime()
+    this.armMuteCheck()
+  }
+
+  /** Mikrofón sa po prerušení vrátil – zaznač medzeru, aby bolo jasné, že časť zvuku chýba. */
+  private async onUnmute() {
     if (this.muteTimer) clearTimeout(this.muteTimer)
     this.muteTimer = null
+    const from = this.mutedAt
+    this.mutedAt = null
+    if (from === null || this.phase() !== 'recording') return
+    const to = this.currentTime()
+    if (to - from < 1.5) return
+    await db.marks.add({ id: uid(), lectureId: this.lectureId, type: 'gap', t: from, createdAt: Date.now() }).catch(() => {})
+    this.set({ warning: `Systém na chvíľu prerušil mikrofón (${fmtTime(from)}–${fmtTime(to)}) – v tejto časti zvuk chýba.` })
   }
 
   async onVisibility(visible: boolean) {
@@ -325,13 +434,16 @@ class RecordingSession {
       this.flush()
       return
     }
-    const phase = recorderState.get().phase
+    const phase = this.phase()
     if (phase !== 'recording' && phase !== 'paused') return
-    const ended = this.stream?.getAudioTracks().some((t) => t.readyState === 'ended')
-    if (ended) {
+    const tracks = this.stream?.getAudioTracks() ?? []
+    if (!tracks.length || tracks.some((t) => t.readyState === 'ended')) {
       await this.interrupt('Nahrávanie bolo prerušené, keď si odišiel z appky alebo sa zamkla obrazovka.')
       return
     }
+    // stopa je stále stlmená → ak sa do 3 s neobnoví, ide o prerušenie
+    if (tracks.some((t) => t.muted)) this.armMuteCheck()
+    else if (this.mutedAt !== null) void this.onUnmute()
     if (this.ctx && this.ctx.state !== 'running') void this.ctx.resume().catch(() => {})
     await this.acquireWakeLock()
   }
@@ -351,25 +463,30 @@ class RecordingSession {
     }
   }
 
-  async pause() {
-    if (recorderState.get().phase !== 'recording' || !this.seg) return
-    const seg = this.seg
-    this.seg = null
-    this.baseSec = seg.startSec + this.segElapsed(seg)
-    this.set({ phase: 'paused', elapsedSec: this.baseSec, level: 0 })
-    await this.finishSegment(seg)
+  pause() {
+    return this.op(async () => {
+      if (this.phase() !== 'recording' || !this.seg) return
+      const seg = this.seg
+      this.seg = null
+      const dur = this.segElapsed(seg)
+      this.baseSec = seg.startSec + dur
+      this.set({ phase: 'paused', elapsedSec: this.baseSec, level: 0 })
+      await this.finishSegment(seg, dur)
+    })
   }
 
-  async resume() {
-    if (recorderState.get().phase !== 'paused') return
-    const live = this.stream?.getAudioTracks().some((t) => t.readyState === 'live')
-    if (!live) {
-      await this.interrupt('Mikrofón sa medzitým vypol.')
-      return
-    }
-    await this.startSegment(false)
-    this.set({ phase: 'recording' })
-    await this.acquireWakeLock()
+  resume() {
+    return this.op(async () => {
+      if (this.phase() !== 'paused') return
+      const live = this.stream?.getAudioTracks().some((t) => t.readyState === 'live')
+      if (!live) {
+        await this.interruptNow('Mikrofón sa medzitým vypol.')
+        return
+      }
+      await this.startSegment(false)
+      this.set({ phase: 'recording' })
+      await this.acquireWakeLock()
+    })
   }
 
   async addMark(type: MarkType) {
@@ -384,22 +501,28 @@ class RecordingSession {
   }
 
   /** Prerušenie systémom – uloží rozpracovaný segment a čaká na „Pokračovať v nahrávaní“. */
-  async interrupt(message: string) {
-    const phase = recorderState.get().phase
-    if (phase === 'interrupted' || phase === 'idle' || phase === 'stopping') return
-    const seg = this.seg
-    this.seg = null
-    if (seg) this.baseSec = seg.startSec + this.segElapsed(seg)
-    this.set({ phase: 'interrupted', error: message, level: 0, elapsedSec: this.baseSec })
-    if (seg) await this.finishSegment(seg)
-    await this.release()
-    await db.lectures.update(this.lectureId, { interrupted: true, updatedAt: Date.now() })
+  interrupt(message: string) {
+    return this.op(() => this.interruptNow(message))
   }
 
-  private async release() {
+  private async interruptNow(message: string) {
+    const phase = this.phase()
+    if (phase === 'interrupted' || phase === 'idle' || phase === 'stopping' || this.aborted) return
+    const seg = this.seg
+    this.seg = null
+    const dur = seg ? this.segElapsed(seg) : 0
+    if (seg) this.baseSec = seg.startSec + dur
+    this.set({ phase: 'interrupted', error: message, level: 0, elapsedSec: this.baseSec })
+    if (seg) await this.finishSegment(seg, dur)
+    await this.release()
+    await db.lectures.update(this.lectureId, { interrupted: true, updatedAt: Date.now() }).catch(() => {})
+  }
+
+  async release() {
     if (this.timer) clearInterval(this.timer)
     this.timer = null
     if (this.muteTimer) clearTimeout(this.muteTimer)
+    this.muteTimer = null
     this.stream?.getTracks().forEach((t) => t.stop())
     this.stream = null
     this.analyser = null
@@ -413,13 +536,32 @@ class RecordingSession {
     this.wakeLock = null
   }
 
-  async stop() {
+  stop() {
+    return this.op(async () => {
+      const seg = this.seg
+      this.seg = null
+      this.set({ phase: 'stopping' })
+      try {
+        if (seg) await this.finishSegment(seg)
+      } finally {
+        await this.release()
+      }
+      await finalizeLectureAfterRecording(this.lectureId)
+      recorderState.set(initial)
+    })
+  }
+
+  /** Okamžité zrušenie bez ukladania (pri mazaní prednášky). */
+  async abort() {
+    this.aborted = true
     const seg = this.seg
     this.seg = null
-    this.set({ phase: 'stopping' })
-    if (seg) await this.finishSegment(seg)
+    try {
+      if (seg && seg.recorder.state !== 'inactive') seg.recorder.stop()
+    } catch {
+      /* ignore */
+    }
     await this.release()
-    await finalizeLectureAfterRecording(this.lectureId)
     recorderState.set(initial)
   }
 }
@@ -437,7 +579,7 @@ export async function finalizeLectureAfterRecording(lectureId: string) {
       errorStep: 'transcribe',
       interrupted: false,
       durationSec,
-      error: segs.length
+      error: segs.some((s) => s.size > 0)
         ? 'V nahrávke sa nenašla reč – bola príliš tichá. Ak si myslíš, že tam reč je, ťukni na „Prepísať aj tiché úseky“.'
         : 'Nahrávka je prázdna.',
       updatedAt: Date.now(),
@@ -445,6 +587,8 @@ export async function finalizeLectureAfterRecording(lectureId: string) {
     return
   }
   await db.lectures.update(lectureId, { status: 'transcribing', interrupted: false, durationSec, updatedAt: Date.now() })
+  // ak je už všetko prepísané (napr. posledný úsek bol prepísaný ešte počas nahrávania), hneď prejdi ďalej
+  await updateLecture(lectureId)
   notifySegments()
 }
 
@@ -458,8 +602,10 @@ export function currentSession() {
 export async function startRecording(lectureId: string, opts: { gapBefore?: boolean } = {}) {
   const unsupported = recordingSupported()
   if (unsupported) throw new Error(unsupported)
-  if (session && recorderState.get().active && session.lectureId !== lectureId && recorderState.get().phase !== 'interrupted') {
-    throw new Error('Už prebieha nahrávanie inej prednášky. Najprv ho ukonči.')
+  const st = recorderState.get()
+  if (session && st.active && st.phase !== 'interrupted') {
+    if (session.lectureId !== lectureId) throw new Error('Už prebieha nahrávanie inej prednášky. Najprv ho ukonči.')
+    return
   }
   session = new RecordingSession(lectureId)
   try {
@@ -467,7 +613,7 @@ export async function startRecording(lectureId: string, opts: { gapBefore?: bool
   } catch (e) {
     recorderState.set({ ...initial })
     session = null
-    throw new Error(micErrorText(e))
+    throw new Error((e as Error)?.message === 'Prednáška neexistuje.' ? 'Prednáška neexistuje.' : micErrorText(e))
   }
 }
 
@@ -481,8 +627,9 @@ export async function resumeRecording() {
 
 export async function stopRecording() {
   if (session) {
-    await session.stop()
-    session = null
+    const s = session
+    await s.stop()
+    if (session === s) session = null
   }
 }
 
@@ -491,6 +638,15 @@ export async function finishInterrupted(lectureId: string) {
   if (session && session.lectureId === lectureId) session = null
   recorderState.set({ ...initial })
   await finalizeLectureAfterRecording(lectureId)
+}
+
+/** Pred zmazaním prednášky (alebo všetkých dát) zastaví nahrávanie bez ukladania. */
+export async function abortRecording(lectureId?: string) {
+  if (!session) return
+  if (lectureId && session.lectureId !== lectureId) return
+  const s = session
+  session = null
+  await s.abort()
 }
 
 export async function addMark(type: MarkType) {
@@ -519,6 +675,10 @@ export async function recoverRecordings() {
       continue
     }
     const segs = await db.segments.where('lectureId').equals(l.id).toArray()
+    if (!segs.length) {
+      await db.lectures.update(l.id, { status: 'draft', interrupted: false })
+      continue
+    }
     const durationSec = Math.max(l.durationSec, ...segs.map((s) => s.startSec + s.durationSec), 0)
     await db.lectures.update(l.id, { interrupted: true, durationSec })
   }

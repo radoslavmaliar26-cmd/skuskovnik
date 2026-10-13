@@ -77,3 +77,11 @@ describe('skórovanie testov', () => {
     expect(s.examMax).toBe(DEMO_MATERIAL.test.filter((q) => q.skuskova).length)
   })
 })
+
+describe('záporné čísla v doplňovačke', () => {
+  it('„5“ nie je správna odpoveď na „-5“', () => {
+    const q: Question = { vysvetlenie: '', zdroj: {}, skuskova: false, obtiaznost: 1, id: 'm', typ: 'doplnenie', otazka: '___', spravne: ['-5'] }
+    expect(scoreQuestion(q, '5').correct).toBe(false)
+    expect(scoreQuestion(q, '-5').correct).toBe(true)
+  })
+})

@@ -296,6 +296,7 @@ export function GenerateCard({ lecture, transcript, marks, regenerate }: { lectu
                   onClick={async () => {
                     const ok = await copyText(buildRepairPrompt(errors.list, 'material'))
                     if (ok) toast('Opravná výzva skopírovaná – vlož ju do toho istého rozhovoru v Claude')
+                    else toastError('Kopírovanie zlyhalo – skús to znova.')
                   }}
                 >
                   📋 Kopírovať opravnú výzvu

@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { AnthropicProvider } from '../ai/anthropic'
+import { abortRecording } from '../audio/session'
 import { db, saveSettings } from '../db/db'
 import { exportBackup, importBackup, wipeAll } from '../db/backup'
 import type { AiMode, Settings, TranscriptionProviderId } from '../db/types'
@@ -397,6 +398,7 @@ export function SettingsPage() {
             className="btn block danger small"
             onClick={async () => {
               if (!confirm('Naozaj zmazať VŠETKY dáta appky (prednášky, audio, materiály, testy, nastavenia)? Toto sa nedá vrátiť.')) return
+              await abortRecording()
               await wipeAll()
               toast('Všetko zmazané')
               navigate('/vitaj', true)

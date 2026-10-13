@@ -251,7 +251,7 @@ export async function retryTranscription(lectureId: string) {
 
 /** Pošle na prepis aj úseky, ktoré appka vyhodnotila ako ticho. */
 export async function transcribeSkipped(lectureId: string) {
-  await db.segments.where('lectureId').equals(lectureId).filter((s) => s.status === 'skipped').modify({ status: 'pending', nextAttemptAt: 0 })
+  await db.segments.where('lectureId').equals(lectureId).filter((s) => s.status === 'skipped' && s.size > 0).modify({ status: 'pending', nextAttemptAt: 0 })
   await db.lectures.update(lectureId, { status: 'transcribing', error: undefined, errorStep: undefined })
   queue.kick()
 }
@@ -266,9 +266,11 @@ export async function continueWithPartial(lectureId: string) {
   await db.lectures.update(lectureId, { status: 'transcribed', error: undefined, errorStep: undefined })
 }
 
-/** Po štarte appky: rozpracované segmenty vráti do fronty. */
+/** Po štarte appky: rozpracované segmenty vráti do fronty a zosúladí stav prednášok. */
 export async function resetStaleSegments() {
   await db.segments.where('status').equals('transcribing').modify({ status: 'pending' })
+  const stuck = await db.lectures.where('status').equals('transcribing').toArray()
+  for (const l of stuck) await updateLecture(l.id)
 }
 
 export const queue = new TranscriptionQueue()

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { recorderState } from '../audio/session'
+import { abortRecording, recorderState } from '../audio/session'
 import { db, deleteLecture } from '../db/db'
 import type { Lecture, Segment } from '../db/types'
 import { fmtDate, fmtDuration, fmtTime } from '../lib/text'
@@ -238,6 +238,7 @@ export function LecturePage({ lectureId, tab, query }: { lectureId?: string; tab
             lecture={lecture}
             onDelete={async () => {
               if (!confirm(`Naozaj zmazať prednášku „${lecture.title}“ so všetkými dátami (audio, prepis, materiál, testy)?`)) return
+              await abortRecording(lecture.id)
               await deleteLecture(lecture.id)
               toast('Prednáška zmazaná')
               navigate('/', true)

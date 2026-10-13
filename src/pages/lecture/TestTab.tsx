@@ -24,6 +24,8 @@ function NewTestCard({ lecture, material, existing, onClose }: { lecture: Lectur
   const [paste, setPaste] = useState('')
   const [errors, setErrors] = useState<string[] | null>(null)
   const [busy, setBusy] = useState(false)
+  // prepis načítame vopred – iOS dovolí zápis do schránky len hneď po ťuknutí
+  const transcript = useLive(() => db.transcripts.get(lecture.id), [lecture.id])
   if (!settings) return null
   const activeMode = mode ?? effectiveAiMode(settings)
   const hasKey = !!settings.keys.anthropic.trim()
@@ -40,8 +42,7 @@ function NewTestCard({ lecture, material, existing, onClose }: { lecture: Lectur
     navigate(`/test/${t.id}`)
   }
 
-  const prompt = async () => {
-    const transcript = await db.transcripts.get(lecture.id)
+  const prompt = () => {
     return buildNewTestPrompt({ material: material.data, existing: existingQs, ...opts, examShare: settings.examShare, mode: 'claudeApp', paragraphs: transcript?.paragraphs })
   }
 
@@ -145,7 +146,8 @@ function NewTestCard({ lecture, material, existing, onClose }: { lecture: Lectur
             className="btn block"
             disabled={!opts.types.length || !opts.difficulty.length}
             onClick={async () => {
-              if (await copyText(await prompt())) toast('Zadanie skopírované – vlož ho do Claude')
+              if (await copyText(prompt())) toast('Zadanie skopírované – vlož ho do Claude')
+              else toastError('Kopírovanie zlyhalo – skús to znova.')
             }}
           >
             📋 Kopírovať pre Claude
@@ -203,6 +205,7 @@ function NewTestCard({ lecture, material, existing, onClose }: { lecture: Lectur
                 style={{ marginTop: 6 }}
                 onClick={async () => {
                   if (await copyText(buildRepairPrompt(errors, 'test'))) toast('Opravná výzva skopírovaná')
+                  else toastError('Kopírovanie zlyhalo – skús to znova.')
                 }}
               >
                 📋 Kopírovať opravnú výzvu

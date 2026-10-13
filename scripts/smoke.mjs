@@ -62,6 +62,8 @@ page.on('console', (m) => {
   if (m.type() === 'error') errors.push(`console: ${m.text()}`)
 })
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
+page.on('error', (e) => errors.push(`crash: ${e.message}`))
+page.on('framenavigated', (f) => { if (f === page.mainFrame()) console.log('  navigácia:', f.url()) })
 page.on('dialog', (d) => d.accept())
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -218,6 +220,12 @@ await step('nahrávanie s falošným mikrofónom', async () => {
   await click('Bude na skúške')
   await snap('nahravanie')
   await sleep(11000) // aspoň jeden 10 s kúsok
+  await click('Pauza')
+  await waitText('Pozastavené')
+  await sleep(1000)
+  await click('Pokračovať')
+  await waitText('Nahráva sa')
+  await sleep(3000)
   await click('Ukončiť')
   await sleep(2500)
   const h = await page.evaluate(() => location.hash)
@@ -237,6 +245,8 @@ await step('nahrávanie s falošným mikrofónom', async () => {
   )
   console.log('  segmenty:', JSON.stringify(segs))
   if (!segs.chunks) throw new Error('Nahrávka sa neuložila (0 kúskov)')
+  if (segs.segments.length !== 2) throw new Error(`po pauze mali byť 2 úseky, sú ${segs.segments.length}`)
+  if (segs.segments.some((s) => s.status === 'recording')) throw new Error('úsek zostal v stave „recording“')
 })
 
 await step('vloženie textu', async () => {

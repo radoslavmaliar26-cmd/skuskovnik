@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { abortRecording } from '../audio/session'
 import { db, deleteLecture } from '../db/db'
 import type { Lang, Subject } from '../db/types'
 import { buildSubjectTest, createRetryTest } from '../exam/tests'
@@ -245,7 +246,10 @@ export function SubjectPage({ subjectId, tab }: { subjectId?: string; tab?: stri
               onClick={async () => {
                 const n = (lectures ?? []).length
                 if (!confirm(n ? `Zmazať predmet aj s ${n} ${plural(n, 'prednáškou', 'prednáškami', 'prednáškami')} a všetkými dátami?` : 'Zmazať predmet?')) return
-                for (const l of lectures ?? []) await deleteLecture(l.id)
+                for (const l of lectures ?? []) {
+                  await abortRecording(l.id)
+                  await deleteLecture(l.id)
+                }
                 await db.tests.where('subjectId').equals(id).delete()
                 await db.attempts.where('subjectId').equals(id).delete()
                 await db.subjects.delete(id)

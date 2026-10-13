@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  addMark, finishInterrupted, pauseRecording, recorderState, recordingSupported, resumeRecording, startRecording, stopRecording,
+  abortRecording, addMark, finishInterrupted, pauseRecording, recorderState, recordingSupported, resumeRecording, startRecording, stopRecording,
 } from '../audio/session'
 import { db, saveSettings } from '../db/db'
 import { fmtTime } from '../lib/text'
@@ -48,7 +48,14 @@ export function RecordPage({ lectureId }: { lectureId?: string }) {
     return (
       <>
         <TopBar title="Nahrávanie" back />
-        <div className="page">Prednáška neexistuje.</div>
+        <div className="page">
+          <p>Prednáška neexistuje (možno bola zmazaná).</p>
+          {mine ? (
+            <button className="btn block red" onClick={() => void abortRecording(lectureId).then(() => navigate('/', true))}>
+              Zastaviť mikrofón
+            </button>
+          ) : null}
+        </div>
       </>
     )
   }
@@ -108,6 +115,7 @@ export function RecordPage({ lectureId }: { lectureId?: string }) {
         {unsupported ? <div className="err">{unsupported}</div> : null}
         {error ? <div className="err">{error}</div> : null}
         {otherActive ? <div className="warn-box">Práve sa nahráva iná prednáška. Najprv ju ukonči.</div> : null}
+        {mine && rec.warning && phase !== 'interrupted' ? <div className="warn-box small">⚠️ {rec.warning}</div> : null}
 
         <div className="card center">
           <div className="small muted">
@@ -214,7 +222,7 @@ export function RecordPage({ lectureId }: { lectureId?: string }) {
               <div className="row">
                 <span className="grow">
                   {rec.wakeLock === 'on'
-                    ? '🔆 Obrazovka sa nezamkne'
+                    ? '🔆 Appka požiadala, aby sa obrazovka nezamkla. Na starších iOS to v appke z plochy nemusí fungovať – pre istotu nastav Automatické zamykanie na „Nikdy“.'
                     : rec.wakeLock === 'unsupported'
                       ? '⚠️ Tento prehliadač nevie zabrániť zamknutiu obrazovky. Nastav si Nastavenia → Displej a jas → Automatické zamykanie → Nikdy.'
                       : '⚠️ Obrazovka sa môže zamknúť – nastav Automatické zamykanie na „Nikdy“.'}

@@ -1,15 +1,14 @@
-import { db } from '../db/db'
+import { db, getSettings } from '../db/db'
 import type { Segment } from '../db/types'
 import { uid } from '../lib/text'
 import { containsSpeech, findCutPoints, mixToMono } from './levels'
 import { describeFile } from './mime'
-import { notifySegments } from './session'
+import { maxSegmentSec, notifySegments } from './session'
 import { encodeWav } from './wav'
 
 /** Hranica pre priame poslanie súboru na prepis (API limit je 25 MB). */
 export const DIRECT_LIMIT = 24 * 1024 * 1024
 const SAMPLE_RATE = 16_000
-const PART_SEC = 600
 
 export type ImportProgress = (text: string, frac?: number) => void
 
@@ -93,10 +92,13 @@ export async function importAudioFile(lectureId: string, file: File, progress: I
   let index = existing.reduce((m, s) => Math.max(m, s.index + 1), 0)
   const base = existing.reduce((m, s) => Math.max(m, s.startSec + s.durationSec), 0)
   const now = Date.now()
+  // modely bez časových značiek (gpt-4o-*) majú obmedzený výstup → kratšie časti
+  const partSec = maxSegmentSec(await getSettings())
+  const duration = file.size <= DIRECT_LIMIT ? await probeDuration(file) : 0
+  const directOk = file.size <= DIRECT_LIMIT && (partSec >= 600 || (duration > 0 && duration <= partSec + 30))
 
-  if (file.size <= DIRECT_LIMIT) {
+  if (directOk) {
     progress('Ukladám súbor…', 0.3)
-    const duration = await probeDuration(file)
     const data = await file.arrayBuffer()
     const seg: Segment = {
       id: uid(),
@@ -134,7 +136,7 @@ export async function importAudioFile(lectureId: string, file: File, progress: I
   if (!samples.length) throw new ImportError(DECODE_HELP)
   const durationSec = samples.length / SAMPLE_RATE
   progress('Hľadám miesta na rozdelenie…', 0.15)
-  const cuts = [0, ...findCutPoints(samples, SAMPLE_RATE, PART_SEC, 10), samples.length]
+  const cuts = [0, ...findCutPoints(samples, SAMPLE_RATE, partSec, 10), samples.length]
   const total = cuts.length - 1
   for (let i = 0; i < total; i++) {
     progress(`Pripravujem časť ${i + 1}/${total}…`, 0.2 + (0.8 * i) / total)

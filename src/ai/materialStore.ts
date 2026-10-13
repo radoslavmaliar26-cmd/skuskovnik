@@ -12,7 +12,7 @@ export async function saveMaterial(lectureId: string, material: Material, mode: 
   const lecture = await db.lectures.get(lectureId)
   if (!lecture) throw new Error('Prednáška neexistuje.')
   const transcript = await db.transcripts.get(lectureId)
-  const verified = verifyMaterial(structuredClone(material), transcript?.paragraphs ?? [], lecture.durationSec || undefined)
+  const verified = verifyMaterial(JSON.parse(JSON.stringify(material)) as Material, transcript?.paragraphs ?? [], lecture.durationSec || undefined)
   const data = verified.material
   const now = Date.now()
 

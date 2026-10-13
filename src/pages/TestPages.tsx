@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { gradeOpenAnswer } from '../ai/jobs'
 import { QUESTION_TYPE_LABELS, type Question } from '../ai/schema'
 import { db } from '../db/db'
@@ -145,6 +145,8 @@ export function TestRunPage({ testId }: { testId?: string }) {
   const [result, setResult] = useState<QuestionResult | null>(null)
   const [aiBusy, setAiBusy] = useState(false)
   const [aiFeedback, setAiFeedback] = useState<string | null>(null)
+  /** Id práve zobrazenej otázky – aby sa oneskorené AI hodnotenie nepriradilo ďalšej otázke */
+  const currentQid = useRef<string | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -165,6 +167,7 @@ export function TestRunPage({ testId }: { testId?: string }) {
   }, [testId])
 
   const q = test?.questions[idx]
+  currentQid.current = q?.id ?? null
 
   if (test === undefined || !settings) return null
   if (!test) {
@@ -232,7 +235,9 @@ export function TestRunPage({ testId }: { testId?: string }) {
     if (q.typ !== 'otvorena') return
     setAiBusy(true)
     try {
+      const qid = q.id
       const g = await gradeOpenAnswer(q, String(answer ?? ''))
+      if (currentQid.current !== qid) return
       const fb = `${g.hodnotenie}${g.chybajuce.length ? ` Chýba: ${g.chybajuce.join('; ')}.` : ''}`
       setAiFeedback(fb)
       const r = { ...scoreQuestion(q, answer, { aiScore: g.skore }), aiFeedback: fb }

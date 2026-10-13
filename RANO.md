@@ -53,7 +53,8 @@ Voliteľne **Anthropic kľúč** (https://console.anthropic.com/settings/keys) p
 - Testy so 6 typmi otázok, vyhodnotenie, prehľad chýb, nový test, zopakovanie chybných, test z predmetu, AI hodnotenie otvorených odpovedí (API).
 - Kartičky (Leitner), štatistiky, export Markdown/PDF, záloha/obnova, zmazanie audia, prehrávanie od časovej značky, čierna úsporná obrazovka.
 - Inštalovateľná PWA, offline režim (okrem volaní AI), ponuka „Obnoviť“ pri novej verzii.
-- 106 unit testov (Vitest) + headless smoke test v Chrome (390×844, screenshoty v `screenshots/`).
+- 109 unit testov (Vitest) + headless smoke test v Chrome (390×844, vrátane nahrávania s falošným mikrofónom a pauzy; screenshoty v `screenshots/`).
+- Revízia celého kódu (subagent) – 15 nájdených problémov opravených.
 
 ## Čo nie je overené / známe obmedzenia
 
