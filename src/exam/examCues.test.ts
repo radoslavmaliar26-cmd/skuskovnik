@@ -81,3 +81,20 @@ describe('delenie na vety', () => {
     ])
   })
 })
+
+describe('examCues – angličtina', () => {
+  const cases: [string, string | null][] = [
+    ['This will be on the exam, so learn it well.', 'skuska'],
+    ["Hooke's law is definitely going to be... no wait, it will definitely be on the final exam.", 'skuska'],
+    ["I'm going to ask you about this.", 'skuska'],
+    ['This is a typical exam question.', 'skuska'],
+    ["Write this down: the first written test will be on November twelfth at ten o'clock.", 'organizacne'],
+    ['The deadline for the report is next Friday.', 'organizacne'],
+    ['This will not be on the exam.', 'organizacne'],
+    ['Be careful, a common mistake is mixing millimeters and meters.', 'dolezite'],
+    ['This is really important.', 'dolezite'],
+    ['Normal stress is force divided by area.', null],
+    ['We will test the material in the lab.', null],
+  ]
+  for (const [s, typ] of cases) it(`${typ ?? 'nič'}: ${s}`, () => expect(classifySentence(s)).toBe(typ))
+})

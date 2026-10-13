@@ -67,6 +67,8 @@ npm run lint       # oxlint
 npm run build      # build do docs/ (GitHub Pages)
 npm run smoke      # headless smoke test buildu v lokálnom Chrome (screenshoty do screenshots/)
 npm run icons      # vygeneruje PNG ikony zo scripts/icon.svg
+npm run e2e:prepis -- <súbor.wav> [model] [--record=80] [--fail429]   # end-to-end test prepisu v Chrome proti lokálnemu mock API
+# reálny test s Groq: GROQ_KEY_FILE=<súbor s kľúčom> npm run e2e:prepis -- <súbor> whisper-large-v3 --lang=sk
 ```
 
 Štruktúra: `src/audio` (nahrávanie, import, WAV), `src/transcription` (prepis, fronta), `src/ai` (prompty, Claude, parser, overenie citátov), `src/exam` (detekcia skúškových fráz, skórovanie, kartičky), `src/db` (Dexie), `src/ui`, `src/pages`, `src/demo`.

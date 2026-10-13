@@ -88,15 +88,54 @@ const ORGANIZATIONAL: RegExp[] = [
   /\bopravn(y|a|e) termin\w*\b/,
 ]
 
+// Angličtina (predmety s jazykom „en“)
+const EN_EXAM_NOUN = '(exam|exams|test|tests|quiz|midterm|final|finals)'
+const EN_EXAM: RegExp[] = [
+  new RegExp(
+    `\\b(will|is going to|are going to|is gonna|might|may|could|should)\\s+(definitely |certainly |probably |surely |also )?(be|come up|appear|show up)\\s+(on|in)\\s+(the |your |our |this |next |every )?(final |midterm |written |oral )?${EN_EXAM_NOUN}\\b`,
+  ),
+  new RegExp(`\\b(this|that|it|these|those)\\s+(is|are|'s)\\s+(definitely |certainly |always )?(on|in)\\s+(the |your |every )?(final |midterm |written |oral )?${EN_EXAM_NOUN}\\b`),
+  /\b(i will|i'll|i am going to|i'm going to|i'm gonna|i will definitely|i always)\s+(definitely\s+)?(ask|test|examine)\s+(you\s+)?(about\s+|on\s+)?(this|that|it|these)\b/,
+  /\b(typical|classic|standard)\s+(exam|test)\s+(question|problem)\b/,
+  /\bexam question\b/,
+  new RegExp(`\\byou('ll| will)?\\s+(need|have) to know (this|that|these|it) for the ${EN_EXAM_NOUN}\\b`),
+]
+const EN_EXAM_NEGATION = new RegExp(`\\b(will not|won't|isn't going to|is not going to|wont)\\s+be\\s+(on|in)\\s+(the\\s+)?${EN_EXAM_NOUN}\\b|\\bnot (on|in) the ${EN_EXAM_NOUN}\\b`)
+const EN_IMPORTANT: RegExp[] = [
+  /\bwrite (this|that|it|these) down\b/,
+  /\b(this|that|it) is (very |really |extremely |super |absolutely )?(important|crucial|essential|key|critical)\b/,
+  /\b(very|really|extremely) important\b/,
+  /\bremember (this|that|these)\b/,
+  /\bbe careful\b/,
+  /\bcommon (mistake|error)\b/,
+  /\bdon'?t forget\b/,
+  /\byou (must|need to|have to|should) (know|remember|understand|memorize)\b/,
+  /\bpay attention\b/,
+  /\bunderline (this|that)\b/,
+]
+const EN_MONTHS = '(january|february|march|april|may|june|july|august|september|october|november|december)'
+const EN_ORGANIZATIONAL: RegExp[] = [
+  new RegExp(`\\b${EN_MONTHS}\\s+(\\d{1,2}(st|nd|rd|th)?|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth|nineteenth|twentieth|twenty|thirtieth|thirty)\\b`),
+  new RegExp(`\\b\\d{1,2}(st|nd|rd|th)?\\s+of\\s+${EN_MONTHS}\\b`),
+  /\bnext (week|monday|tuesday|wednesday|thursday|friday|lecture|class|semester|seminar)\b/,
+  /\b(deadline|due (on|by|date|next)|hand (it |them )?in|submit (it|them|your|the))\b/,
+  /\bbring (a |your )?(calculator|laptop|notes)\b/,
+  /\boffice hours\b/,
+  /\b(attendance|requirements? (for|to pass))\b/,
+  /\bno (lecture|class) (next|on|this)\b/,
+]
+
 export function classifySentence(sentence: string): CueType | null {
   const n = normalize(sentence)
   const negated = EXAM_NEGATION.test(n)
+  const enNegated = EN_EXAM_NEGATION.test(n)
   if (EXAM_PHRASES.some((r) => r.test(n))) return 'skuska'
   if (NA_EXAM.test(n) && EXAM_TRIGGER.test(n) && !negated) return 'skuska'
-  if (ORGANIZATIONAL.some((r) => r.test(n))) return 'organizacne'
+  if (!enNegated && EN_EXAM.some((r) => r.test(n))) return 'skuska'
+  if (ORGANIZATIONAL.some((r) => r.test(n)) || EN_ORGANIZATIONAL.some((r) => r.test(n))) return 'organizacne'
   // „toto na skúške nebude“ – užitočná organizačná info
-  if (negated && EXAM_NOUN.test(n)) return 'organizacne'
-  if (IMPORTANT.some((r) => r.test(n))) return 'dolezite'
+  if ((negated && EXAM_NOUN.test(n)) || enNegated) return 'organizacne'
+  if (IMPORTANT.some((r) => r.test(n)) || EN_IMPORTANT.some((r) => r.test(n))) return 'dolezite'
   return null
 }
 
