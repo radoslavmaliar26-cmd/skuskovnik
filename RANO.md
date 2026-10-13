@@ -46,12 +46,13 @@ Voliteľne **Anthropic kľúč** (https://console.anthropic.com/settings/keys) p
 
 ## Čo funguje (overené testami)
 
-- Nahrávanie po úsekoch (rez v tichu, ukladanie každých 10 s, Wake Lock, obnova po prerušení aj po páde appky), import súborov (do 24 MB priamo, väčšie delené na 10-min WAV časti), vloženie textu.
+- Nahrávanie po úsekoch (rez v tichu, ukladanie každých 10 s, Wake Lock, obnova po prerušení aj po páde appky), import súborov (do 24 MB priamo, väčšie delené na WAV časti po ~10 min, pri modeloch gpt-4o po ~4 min), vloženie textu.
 - Prepis cez Groq/OpenAI/vlastný server s frontou, opakovaním (429 + retry-after, exponenciálne čakanie), filtrovaním halucinácií a obnovou po zatvorení appky.
 - Lokálna detekcia skúškových, dôležitých a organizačných viet (sk/cs).
 - Materiál v oboch režimoch (Claude appka aj API so streamom), validácia schémy, robustný parser vloženej odpovede (aj rozdelenej do viacerých správ), opravná výzva, overenie citátov.
 - Testy so 6 typmi otázok, vyhodnotenie, prehľad chýb, nový test, zopakovanie chybných, test z predmetu, AI hodnotenie otvorených odpovedí (API).
 - Kartičky (Leitner), štatistiky, export Markdown/PDF, záloha/obnova, zmazanie audia, prehrávanie od časovej značky, čierna úsporná obrazovka.
+- P2: fotky tabule počas nahrávania (📷 – v režime API ich dostane aj Claude), štatistiky a slabé témy (záložka Opakovanie), počítadlo spotreby (Nastavenia), experimentálny živý prepis cez Web Speech API (Nová prednáška → „🧪 Živý prepis“; zvuk sa neukladá).
 - Inštalovateľná PWA, offline režim (okrem volaní AI), ponuka „Obnoviť“ pri novej verzii.
 - 109 unit testov (Vitest) + headless smoke test v Chrome (390×844, vrátane nahrávania s falošným mikrofónom a pauzy; screenshoty v `screenshots/`).
 - Revízia celého kódu (subagent) – 15 nájdených problémov opravených.
@@ -62,7 +63,9 @@ Voliteľne **Anthropic kľúč** (https://console.anthropic.com/settings/keys) p
 - Volania Groq/OpenAI/Anthropic API som nemohol vyskúšať naživo (prostredie nemalo prístup ani kľúče) – sú overené proti mockom podľa dokumentácie. Ak by niečo zlyhalo, appka ukáže zrozumiteľnú chybu.
 - iOS nedovolí nahrávať na pozadí ani pri zamknutej obrazovke; prepis a generovanie bežia len pri otvorenej appke.
 - Pri importe veľmi dlhých nahrávok (> ~1,5 h, > 24 MB) môže telefónu dôjsť pamäť pri dekódovaní – appka vtedy poradí orezať nahrávku alebo zvoliť „Komprimovanú“ kvalitu v Hlasových poznámkach.
-- Fotky tabule sa posielajú Claudovi len v režime API (v režime Claude appky ich treba priložiť ručne).
+- Fotky tabule sa posielajú Claudovi len v režime API (v režime Claude appky sa neposielajú).
+- Živý prepis (Web Speech API) je experimentálny – na iPhone ho Safari môže po chvíli ticha zastaviť (appka ho reštartuje), presnosť je nižšia ako pri Groq.
+- Wake Lock v appke z plochy funguje spoľahlivo až od iOS 18.4 – na starších verziách nastav Automatické zamykanie na „Nikdy“.
 
 ## Čo bolo zablokované
 
