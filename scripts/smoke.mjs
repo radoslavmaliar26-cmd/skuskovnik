@@ -196,6 +196,9 @@ await step('kartičky', async () => {
 await step('predmet – bude na skúške', async () => {
   await page.goto(`${URL0}#/`)
   await waitText('Pružnosť a pevnosť (ukážka)')
+  // stav v zozname sa musí aktualizovať bez obnovenia stránky (cache živých dotazov Dexie)
+  await waitText('Hotovo')
+  if (await hasText('čaká na materiál')) throw new Error('Zoznam ukazuje „čaká na materiál“ pri hotovej prednáške')
   await click('Predmet ›')
   await click('Bude na skúške')
   await waitText('Termíny a organizačné')

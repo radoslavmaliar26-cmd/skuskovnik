@@ -22,7 +22,7 @@ export class SkuskovnikDB extends Dexie {
   settings!: Table<Settings, string>
 
   constructor(name = 'skuskovnik') {
-    super(name)
+    super(name, { cache: 'disabled' })
     this.version(1).stores({
       subjects: 'id, name, createdAt',
       lectures: 'id, subjectId, status, createdAt',
